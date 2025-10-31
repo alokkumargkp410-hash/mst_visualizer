@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MST Visualizer (Prim’s & Kruskal’s)</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <h1>🌐 Minimum Spanning Tree Visualizer</h1>
+
+  <div class="controls">
+    <label>Algorithm:
+      <select id="algo">
+        <option value="prim">Prim’s Algorithm</option>
+        <option value="kruskal">Kruskal’s Algorithm</option>
+      </select>
+    </label>
+
+    <label>Start Node:
+      <select id="startNode"></select>
+    </label>
+
+    <!-- ✅ Added Node Count Input -->
+    <label>Nodes:
+      <input type="number" id="nodeCount" value="8" min="2" max="20" style="width:60px;">
+    </label>
+
+    <button id="generate">Generate Graph</button>
+    <button id="next">Next Step</button>
+    <button id="auto">Auto Run</button>
+    <button id="stop">Stop</button>
+    <button id="reset">Reset</button>
+  </div>
+
+  <div class="legend">
+    <div class="legend-item"><div class="legend-box unused"></div> Unused</div>
+    <div class="legend-item"><div class="legend-box considered"></div> Considered</div>
+    <div class="legend-item"><div class="legend-box selected"></div> Selected</div>
+    <div class="legend-item"><div class="legend-box rejected"></div> Rejected</div>
+  </div>
+
+  <div class="main-container">
+    <canvas id="graph" width="800" height="500"></canvas>
+    <div class="log-panel">
+      <h2>📋 MST Steps & Explanation</h2>
+      <div id="log" class="log-box"></div>
+    </div>
+  </div>
+
+  <div id="result" class="result-box"></div>
+
+  <script src="script.js"></script>
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
