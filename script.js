@@ -29,7 +29,6 @@ function generateGraph() {
   kruskalState = {};
   stopFlag = false;
 
-  // Place nodes in circle
   const centerX = canvas.width / 2;
   const centerY = canvas.height / 2;
   const radius = Math.min(canvas.width, canvas.height) / 2.5;
@@ -41,7 +40,6 @@ function generateGraph() {
     nodes.push({ x, y });
   }
 
-  // Generate all possible edges
   let allEdges = [];
   for (let i = 0; i < n; i++) {
     for (let j = i + 1; j < n; j++) {
@@ -54,7 +52,6 @@ function generateGraph() {
     }
   }
 
-  // Select limited edges
   for (let i = 0; i < Math.min(eCount, allEdges.length); i++) {
     const rand = Math.floor(Math.random() * allEdges.length);
     edges.push(allEdges.splice(rand, 1)[0]);
@@ -90,7 +87,7 @@ function drawGraph() {
         ? "red"
         : "gray";
     ctx.strokeStyle = color;
-    ctx.lineWidth = e.state === "selected" ? 3 : 1.2;
+    ctx.lineWidth = e.state === "selected" ? 3 : 1.3;
     ctx.moveTo(nodes[e.u].x, nodes[e.u].y);
     ctx.lineTo(nodes[e.v].x, nodes[e.v].y);
     ctx.stroke();
@@ -113,13 +110,25 @@ function drawGraph() {
   }
 }
 
-// 🔹 Logging
+// 🔹 Helper
+function wait(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
 function log(msg) {
   logBox.innerHTML += msg + "<br>";
   logBox.scrollTop = logBox.scrollHeight;
 }
 function resetLog() {
   logBox.innerHTML = "";
+}
+
+// 🔹 Clear temporary states (yellow/red)
+function clearTemporaryStates() {
+  for (let e of edges) {
+    if (e.state === "considered" || e.state === "rejected") {
+      e.state = "unused";
+    }
+  }
 }
 
 // 🔹 Show Result
@@ -134,8 +143,11 @@ function showResult(algorithm) {
   `;
 }
 
-// 🔹 Prim’s Algorithm (with reasons)
-function primNextStep() {
+// 🔹 Prim’s Algorithm
+async function primNextStep(auto = false) {
+  clearTemporaryStates(); // remove old yellow/red before next step
+  drawGraph();
+
   const n = nodes.length;
   if (!primState.inMST) {
     primState = { inMST: Array(n).fill(false), finished: false };
@@ -152,8 +164,10 @@ function primNextStep() {
     const in1 = primState.inMST[e.u];
     const in2 = primState.inMST[e.v];
     if (in1 ^ in2) {
-      if (!best || e.w < best.w) best = e;
       e.state = "considered";
+      drawGraph();
+      if (auto) await wait(200);
+      if (!best || e.w < best.w) best = e;
     }
   }
 
@@ -165,14 +179,23 @@ function primNextStep() {
     return;
   }
 
+  for (let e of edges) {
+    if (e.state === "considered" && e !== best) e.state = "rejected";
+  }
+
   best.state = "selected";
   primState.inMST[best.u] = primState.inMST[best.v] = true;
-  log(`🟢 Selected edge (${best.u},${best.v}) = ${best.w} because it was the smallest edge connecting the MST.`);
+
   drawGraph();
+  log(`🟢 Selected edge (${best.u},${best.v}) = ${best.w}`);
+  if (auto) await wait(400);
 }
 
-// 🔹 Kruskal’s Algorithm (with reasons)
-function kruskalNextStep() {
+// 🔹 Kruskal’s Algorithm
+async function kruskalNextStep(auto = false) {
+  clearTemporaryStates(); // remove old yellow/red before next step
+  drawGraph();
+
   const n = nodes.length;
   if (!kruskalState.uf) {
     kruskalState = {
@@ -194,10 +217,12 @@ function kruskalNextStep() {
   const e = kruskalState.edges.shift();
   if (!e) return;
 
+  e.state = "considered";
+  drawGraph();
+  if (auto) await wait(300);
+
   const find = (x) =>
-    kruskalState.uf[x] === x
-      ? x
-      : (kruskalState.uf[x] = find(kruskalState.uf[x]));
+    kruskalState.uf[x] === x ? x : (kruskalState.uf[x] = find(kruskalState.uf[x]));
   const u = find(e.u),
     v = find(e.v);
 
@@ -205,16 +230,17 @@ function kruskalNextStep() {
     kruskalState.uf[u] = v;
     e.state = "selected";
     kruskalState.mstCount++;
-    log(`🟢 Selected edge (${e.u},${e.v}) = ${e.w} because it connects two different components.`);
+    log(`🟢 Selected edge (${e.u},${e.v}) = ${e.w}`);
   } else {
     e.state = "rejected";
-    log(`❌ Rejected edge (${e.u},${e.v}) = ${e.w} because it forms a cycle.`);
+    log(`❌ Rejected edge (${e.u},${e.v}) = ${e.w} (forms a cycle)`);
   }
 
   drawGraph();
+  if (auto) await wait(400);
 }
 
-// 🔹 Stop Button
+// 🔹 Stop
 document.getElementById("stop").onclick = () => {
   stopFlag = true;
   autoRunning = false;
@@ -222,7 +248,7 @@ document.getElementById("stop").onclick = () => {
   log("🛑 Algorithm stopped by user.");
 };
 
-// 🔹 Auto Stop Helper
+// 🔹 Auto Stop
 function autoStopIfDone() {
   if (autoRunning) {
     autoRunning = false;
@@ -231,12 +257,12 @@ function autoStopIfDone() {
   }
 }
 
-// 🔹 Control Buttons
+// 🔹 Controls
 document.getElementById("generate").onclick = generateGraph;
-document.getElementById("next").onclick = () => {
+document.getElementById("next").onclick = async () => {
   const algo = document.getElementById("algo").value;
-  if (algo === "prim") primNextStep();
-  else kruskalNextStep();
+  if (algo === "prim") await primNextStep();
+  else await kruskalNextStep();
 };
 
 document.getElementById("auto").onclick = async () => {
@@ -251,12 +277,9 @@ document.getElementById("auto").onclick = async () => {
 
   log("▶️ Auto Run started...");
 
-  for (let i = 0; i < edges.length; i++) {
-    if (stopFlag) break;
-    if (algo === "prim") primNextStep();
-    else kruskalNextStep();
-
-    await new Promise((r) => setTimeout(r, 700));
+  while (!stopFlag) {
+    if (algo === "prim") await primNextStep(true);
+    else await kruskalNextStep(true);
 
     if (
       stopFlag ||
@@ -271,7 +294,7 @@ document.getElementById("auto").onclick = async () => {
   autoBtn.disabled = false;
 };
 
-// 🔹 Reset Button
+// 🔹 Reset
 document.getElementById("reset").onclick = () => {
   edges.forEach((e) => (e.state = "unused"));
   primState = {};
@@ -282,5 +305,6 @@ document.getElementById("reset").onclick = () => {
   log("🔄 Reset done.");
 };
 
-// Initialize
+// Init
 generateGraph();
+
