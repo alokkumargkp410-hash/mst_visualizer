@@ -122,7 +122,7 @@ function resetLog() {
   logBox.innerHTML = "";
 }
 
-// 🔹 Clear temporary states (yellow/red)
+// 🔹 Clear temporary states
 function clearTemporaryStates() {
   for (let e of edges) {
     if (e.state === "considered" || e.state === "rejected") {
@@ -145,7 +145,7 @@ function showResult(algorithm) {
 
 // 🔹 Prim’s Algorithm
 async function primNextStep(auto = false) {
-  clearTemporaryStates(); // remove old yellow/red before next step
+  clearTemporaryStates();
   drawGraph();
 
   const n = nodes.length;
@@ -166,7 +166,7 @@ async function primNextStep(auto = false) {
     if (in1 ^ in2) {
       e.state = "considered";
       drawGraph();
-      if (auto) await wait(200);
+      if (auto) await wait(400);
       if (!best || e.w < best.w) best = e;
     }
   }
@@ -179,21 +179,26 @@ async function primNextStep(auto = false) {
     return;
   }
 
+  // 🔸 Show rejected edges in red temporarily
   for (let e of edges) {
-    if (e.state === "considered" && e !== best) e.state = "rejected";
+    if (e.state === "considered" && e !== best) {
+      e.state = "rejected";
+    }
   }
+  drawGraph();
+  if (auto) await wait(400);
 
+  // 🔸 Select the best (green)
   best.state = "selected";
   primState.inMST[best.u] = primState.inMST[best.v] = true;
-
   drawGraph();
   log(`🟢 Selected edge (${best.u},${best.v}) = ${best.w}`);
-  if (auto) await wait(400);
+  if (auto) await wait(500);
 }
 
 // 🔹 Kruskal’s Algorithm
 async function kruskalNextStep(auto = false) {
-  clearTemporaryStates(); // remove old yellow/red before next step
+  clearTemporaryStates();
   drawGraph();
 
   const n = nodes.length;
@@ -217,15 +222,17 @@ async function kruskalNextStep(auto = false) {
   const e = kruskalState.edges.shift();
   if (!e) return;
 
+  // 🔸 Step 1: Yellow (considered)
   e.state = "considered";
   drawGraph();
-  if (auto) await wait(300);
+  if (auto) await wait(400);
 
   const find = (x) =>
     kruskalState.uf[x] === x ? x : (kruskalState.uf[x] = find(kruskalState.uf[x]));
   const u = find(e.u),
     v = find(e.v);
 
+  // 🔸 Step 2: Red or Green decision
   if (u !== v) {
     kruskalState.uf[u] = v;
     e.state = "selected";
@@ -233,11 +240,11 @@ async function kruskalNextStep(auto = false) {
     log(`🟢 Selected edge (${e.u},${e.v}) = ${e.w}`);
   } else {
     e.state = "rejected";
-    log(`❌ Rejected edge (${e.u},${e.v}) = ${e.w} (forms a cycle)`);
+    log(`❌ Rejected edge (${e.u},${e.v}) = ${e.w} (cycle)`);
   }
 
   drawGraph();
-  if (auto) await wait(400);
+  if (auto) await wait(500);
 }
 
 // 🔹 Stop
@@ -307,4 +314,3 @@ document.getElementById("reset").onclick = () => {
 
 // Init
 generateGraph();
-
