@@ -1,316 +1,472 @@
-const canvas = document.getElementById("graph");
-const ctx = canvas.getContext("2d");
-const logBox = document.getElementById("log");
-const startNodeSelect = document.getElementById("startNode");
-const nodeCountInput = document.getElementById("nodeCount");
-const edgeCountInput = document.getElementById("edgeCount");
+// script.js
 
-let nodes = [];
-let edges = [];
-let primState = {};
-let kruskalState = {};
-let stopFlag = false;
-let autoRunning = false;
+// Graph data - will be generated dynamically
+let graph = null;
 
-// 🔹 Generate Graph
-function generateGraph() {
-  const n = parseInt(nodeCountInput.value);
-  const eCount = parseInt(edgeCountInput.value);
-  if (isNaN(n) || n < 2) {
-    alert("Please enter at least 2 nodes.");
-    return;
-  }
+// Global state variables
+let currentAlgorithm = 'prim';
+let steps = [];
+let currentStep = 0;
+let isPlaying = false;
+let playInterval = null;
+let speed = 1000;
 
-  nodes = [];
-  edges = [];
-  resetLog();
-  document.getElementById("result").innerHTML = "";
-  primState = {};
-  kruskalState = {};
-  stopFlag = false;
-
-  const centerX = canvas.width / 2;
-  const centerY = canvas.height / 2;
-  const radius = Math.min(canvas.width, canvas.height) / 2.5;
-
-  for (let i = 0; i < n; i++) {
-    const angle = (2 * Math.PI * i) / n;
-    const x = centerX + radius * Math.cos(angle);
-    const y = centerY + radius * Math.sin(angle);
-    nodes.push({ x, y });
-  }
-
-  let allEdges = [];
-  for (let i = 0; i < n; i++) {
-    for (let j = i + 1; j < n; j++) {
-      allEdges.push({
-        u: i,
-        v: j,
-        w: Math.floor(Math.random() * 20) + 1,
-        state: "unused",
-      });
+// Generate a random graph
+function generateRandomGraph() {
+    const nodeCount = 6 + Math.floor(Math.random() * 3); // 6-8 nodes
+    const nodes = [];
+    const edges = [];
+    const labels = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    
+    // Generate nodes in a circular layout with some randomness
+    const centerX = 250;
+    const centerY = 250;
+    const radius = 180;
+    
+    for (let i = 0; i < nodeCount; i++) {
+        const angle = (2 * Math.PI * i) / nodeCount;
+        const randomOffset = 30;
+        const x = centerX + radius * Math.cos(angle) + (Math.random() - 0.5) * randomOffset;
+        const y = centerY + radius * Math.sin(angle) + (Math.random() - 0.5) * randomOffset;
+        
+        nodes.push({
+            id: i,
+            x: Math.max(60, Math.min(440, x)),
+            y: Math.max(60, Math.min(440, y)),
+            label: labels[i]
+        });
     }
-  }
-
-  for (let i = 0; i < Math.min(eCount, allEdges.length); i++) {
-    const rand = Math.floor(Math.random() * allEdges.length);
-    edges.push(allEdges.splice(rand, 1)[0]);
-  }
-
-  startNodeSelect.innerHTML = "";
-  for (let i = 0; i < n; i++) {
-    const opt = document.createElement("option");
-    opt.value = i;
-    opt.text = "Node " + i;
-    startNodeSelect.appendChild(opt);
-  }
-
-  log(`🧩 Graph generated with ${n} nodes and ${edges.length} edges.`);
-  drawGraph();
-}
-
-// 🔹 Draw Graph
-function drawGraph() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.font = "14px sans-serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-
-  for (let e of edges) {
-    ctx.beginPath();
-    let color =
-      e.state === "selected"
-        ? "lime"
-        : e.state === "considered"
-        ? "yellow"
-        : e.state === "rejected"
-        ? "red"
-        : "gray";
-    ctx.strokeStyle = color;
-    ctx.lineWidth = e.state === "selected" ? 3 : 1.3;
-    ctx.moveTo(nodes[e.u].x, nodes[e.u].y);
-    ctx.lineTo(nodes[e.v].x, nodes[e.v].y);
-    ctx.stroke();
-
-    const midX = (nodes[e.u].x + nodes[e.v].x) / 2;
-    const midY = (nodes[e.u].y + nodes[e.v].y) / 2;
-    ctx.fillStyle = "#e2e8f0";
-    ctx.fillText(e.w, midX, midY - 10);
-  }
-
-  for (let i = 0; i < nodes.length; i++) {
-    ctx.beginPath();
-    ctx.arc(nodes[i].x, nodes[i].y, 18, 0, 2 * Math.PI);
-    ctx.fillStyle = "#2563eb";
-    ctx.fill();
-    ctx.strokeStyle = "white";
-    ctx.stroke();
-    ctx.fillStyle = "white";
-    ctx.fillText(i, nodes[i].x, nodes[i].y);
-  }
-}
-
-// 🔹 Helper
-function wait(ms) {
-  return new Promise((r) => setTimeout(r, ms));
-}
-function log(msg) {
-  logBox.innerHTML += msg + "<br>";
-  logBox.scrollTop = logBox.scrollHeight;
-}
-function resetLog() {
-  logBox.innerHTML = "";
-}
-
-// 🔹 Clear temporary states
-function clearTemporaryStates() {
-  for (let e of edges) {
-    if (e.state === "considered" || e.state === "rejected") {
-      e.state = "unused";
+    
+    // Generate edges - ensure graph is connected
+    const edgeSet = new Set();
+    
+    // First, create a spanning tree to ensure connectivity
+    const connected = [0];
+    const unconnected = Array.from({ length: nodeCount - 1 }, (_, i) => i + 1);
+    
+    while (unconnected.length > 0) {
+        const fromIdx = Math.floor(Math.random() * connected.length);
+        const toIdx = Math.floor(Math.random() * unconnected.length);
+        
+        const from = connected[fromIdx];
+        const to = unconnected[toIdx];
+        
+        const weight = Math.floor(Math.random() * 9) + 1;
+        const edgeKey = from < to ? `${from}-${to}` : `${to}-${from}`;
+        
+        if (!edgeSet.has(edgeKey)) {
+            edges.push({ from, to, weight });
+            edgeSet.add(edgeKey);
+            connected.push(to);
+            unconnected.splice(toIdx, 1);
+        }
     }
-  }
-}
-
-// 🔹 Show Result
-function showResult(algorithm) {
-  const selected = edges.filter((e) => e.state === "selected");
-  const total = selected.reduce((sum, e) => sum + e.w, 0);
-  const edgeList = selected.map((e) => `(${e.u},${e.v})=${e.w}`).join(", ");
-  document.getElementById("result").innerHTML = `
-    <b>✅ ${algorithm} MST Complete!</b><br>
-    <b>Total Weight:</b> ${total}<br>
-    <b>Selected Edges:</b> ${edgeList}
-  `;
-}
-
-// 🔹 Prim’s Algorithm
-async function primNextStep(auto = false) {
-  clearTemporaryStates();
-  drawGraph();
-
-  const n = nodes.length;
-  if (!primState.inMST) {
-    primState = { inMST: Array(n).fill(false), finished: false };
-    const start = parseInt(startNodeSelect.value);
-    primState.inMST[start] = true;
-    log(`🔹 Started Prim’s algorithm from node ${start}.`);
-    return;
-  }
-
-  if (primState.finished) return;
-
-  let best = null;
-  for (let e of edges) {
-    const in1 = primState.inMST[e.u];
-    const in2 = primState.inMST[e.v];
-    if (in1 ^ in2) {
-      e.state = "considered";
-      drawGraph();
-      if (auto) await wait(400);
-      if (!best || e.w < best.w) best = e;
+    
+    // Add additional random edges
+    const additionalEdges = Math.floor(Math.random() * 4) + 2; // 2-5 extra edges
+    let attempts = 0;
+    
+    while (edges.length < nodeCount - 1 + additionalEdges && attempts < 50) {
+        const from = Math.floor(Math.random() * nodeCount);
+        const to = Math.floor(Math.random() * nodeCount);
+        
+        if (from !== to) {
+            const edgeKey = from < to ? `${from}-${to}` : `${to}-${from}`;
+            
+            if (!edgeSet.has(edgeKey)) {
+                const weight = Math.floor(Math.random() * 9) + 1;
+                edges.push({ from, to, weight });
+                edgeSet.add(edgeKey);
+            }
+        }
+        attempts++;
     }
-  }
-
-  if (!best) {
-    primState.finished = true;
-    showResult("Prim’s");
-    log("✅ MST complete (Prim’s).");
-    autoStopIfDone();
-    return;
-  }
-
-  // 🔸 Show rejected edges in red temporarily
-  for (let e of edges) {
-    if (e.state === "considered" && e !== best) {
-      e.state = "rejected";
-    }
-  }
-  drawGraph();
-  if (auto) await wait(400);
-
-  // 🔸 Select the best (green)
-  best.state = "selected";
-  primState.inMST[best.u] = primState.inMST[best.v] = true;
-  drawGraph();
-  log(`🟢 Selected edge (${best.u},${best.v}) = ${best.w}`);
-  if (auto) await wait(500);
+    
+    return { nodes, edges };
 }
 
-// 🔹 Kruskal’s Algorithm
-async function kruskalNextStep(auto = false) {
-  clearTemporaryStates();
-  drawGraph();
-
-  const n = nodes.length;
-  if (!kruskalState.uf) {
-    kruskalState = {
-      edges: [...edges].sort((a, b) => a.w - b.w),
-      uf: Array.from({ length: n }, (_, i) => i),
-      mstCount: 0,
+// Initialize with default or random graph
+function initializeGraph() {
+    graph = {
+        nodes: [
+            { id: 0, x: 150, y: 100, label: 'A' },
+            { id: 1, x: 350, y: 100, label: 'B' },
+            { id: 2, x: 450, y: 250, label: 'C' },
+            { id: 3, x: 350, y: 400, label: 'D' },
+            { id: 4, x: 150, y: 400, label: 'E' },
+            { id: 5, x: 50, y: 250, label: 'F' },
+        ],
+        edges: [
+            { from: 0, to: 1, weight: 4 },
+            { from: 0, to: 5, weight: 2 },
+            { from: 1, to: 2, weight: 5 },
+            { from: 1, to: 5, weight: 3 },
+            { from: 2, to: 3, weight: 1 },
+            { from: 2, to: 4, weight: 6 },
+            { from: 3, to: 4, weight: 3 },
+            { from: 4, to: 5, weight: 7 },
+            { from: 1, to: 3, weight: 8 },
+        ]
     };
-    log("🔹 Started Kruskal’s algorithm.");
-    return;
-  }
-
-  if (kruskalState.mstCount === n - 1) {
-    showResult("Kruskal’s");
-    log("✅ MST complete (Kruskal’s).");
-    autoStopIfDone();
-    return;
-  }
-
-  const e = kruskalState.edges.shift();
-  if (!e) return;
-
-  // 🔸 Step 1: Yellow (considered)
-  e.state = "considered";
-  drawGraph();
-  if (auto) await wait(400);
-
-  const find = (x) =>
-    kruskalState.uf[x] === x ? x : (kruskalState.uf[x] = find(kruskalState.uf[x]));
-  const u = find(e.u),
-    v = find(e.v);
-
-  // 🔸 Step 2: Red or Green decision
-  if (u !== v) {
-    kruskalState.uf[u] = v;
-    e.state = "selected";
-    kruskalState.mstCount++;
-    log(`🟢 Selected edge (${e.u},${e.v}) = ${e.w}`);
-  } else {
-    e.state = "rejected";
-    log(`❌ Rejected edge (${e.u},${e.v}) = ${e.w} (cycle)`);
-  }
-
-  drawGraph();
-  if (auto) await wait(500);
 }
 
-// 🔹 Stop
-document.getElementById("stop").onclick = () => {
-  stopFlag = true;
-  autoRunning = false;
-  document.getElementById("auto").disabled = false;
-  log("🛑 Algorithm stopped by user.");
-};
-
-// 🔹 Auto Stop
-function autoStopIfDone() {
-  if (autoRunning) {
-    autoRunning = false;
-    document.getElementById("auto").disabled = false;
-    log("⏹ Auto Run completed — MST is ready.");
-  }
+// Generate new random graph
+function generateNewGraph() {
+    if (isPlaying) togglePlay();
+    graph = generateRandomGraph();
+    steps = currentAlgorithm === 'prim' ? generatePrimSteps() : generateKruskalSteps();
+    currentStep = 0;
+    render();
 }
 
-// 🔹 Controls
-document.getElementById("generate").onclick = generateGraph;
-document.getElementById("next").onclick = async () => {
-  const algo = document.getElementById("algo").value;
-  if (algo === "prim") await primNextStep();
-  else await kruskalNextStep();
-};
+// Generate steps for Prim's Algorithm
+function generatePrimSteps() {
+    const stepsData = [];
+    const n = graph.nodes.length;
+    const visited = new Array(n).fill(false);
+    const mstEdges = [];
+    const pq = [];
 
-document.getElementById("auto").onclick = async () => {
-  stopFlag = false;
-  autoRunning = true;
-  const autoBtn = document.getElementById("auto");
-  autoBtn.disabled = true;
+    stepsData.push({
+        description: `Start: Select node ${graph.nodes[0].label} as starting vertex`,
+        visited: [0],
+        mstEdges: [],
+        currentEdge: null,
+        pq: [],
+    });
 
-  const algo = document.getElementById("algo").value;
-  if (algo === "prim") primState = {};
-  else kruskalState = {};
+    visited[0] = true;
+    const visitedSet = [0];
 
-  log("▶️ Auto Run started...");
+    graph.edges.forEach(e => {
+        if (e.from === 0) pq.push({ ...e });
+        if (e.to === 0) pq.push({ from: e.to, to: e.from, weight: e.weight });
+    });
+    pq.sort((a, b) => a.weight - b.weight);
 
-  while (!stopFlag) {
-    if (algo === "prim") await primNextStep(true);
-    else await kruskalNextStep(true);
+    stepsData.push({
+        description: `Priority Queue: Add edges from ${graph.nodes[0].label} to queue`,
+        visited: [...visitedSet],
+        mstEdges: [...mstEdges],
+        currentEdge: null,
+        pq: pq.map(e => `${graph.nodes[e.from].label}-${graph.nodes[e.to].label}(${e.weight})`),
+    });
 
-    if (
-      stopFlag ||
-      (algo === "prim" && primState.finished) ||
-      (algo === "kruskal" && kruskalState.mstCount === nodes.length - 1)
-    ) {
-      autoStopIfDone();
-      break;
+    while (pq.length > 0 && mstEdges.length < n - 1) {
+        const edge = pq.shift();
+        
+        if (visited[edge.to]) {
+            stepsData.push({
+                description: `Skip edge ${graph.nodes[edge.from].label}-${graph.nodes[edge.to].label}: Creates cycle`,
+                visited: [...visitedSet],
+                mstEdges: [...mstEdges],
+                currentEdge: edge,
+                pq: pq.map(e => `${graph.nodes[e.from].label}-${graph.nodes[e.to].label}(${e.weight})`),
+                rejected: true,
+            });
+            continue;
+        }
+
+        mstEdges.push(edge);
+        visited[edge.to] = true;
+        visitedSet.push(edge.to);
+
+        stepsData.push({
+            description: `Select edge ${graph.nodes[edge.from].label}-${graph.nodes[edge.to].label} (weight: ${edge.weight})`,
+            visited: [...visitedSet],
+            mstEdges: [...mstEdges],
+            currentEdge: edge,
+            pq: pq.map(e => `${graph.nodes[e.from].label}-${graph.nodes[e.to].label}(${e.weight})`),
+        });
+
+        graph.edges.forEach(e => {
+            if (e.from === edge.to && !visited[e.to]) {
+                pq.push({ ...e });
+            }
+            if (e.to === edge.to && !visited[e.from]) {
+                pq.push({ from: e.to, to: e.from, weight: e.weight });
+            }
+        });
+        pq.sort((a, b) => a.weight - b.weight);
+
+        stepsData.push({
+            description: `Add edges from ${graph.nodes[edge.to].label} to queue`,
+            visited: [...visitedSet],
+            mstEdges: [...mstEdges],
+            currentEdge: null,
+            pq: pq.map(e => `${graph.nodes[e.from].label}-${graph.nodes[e.to].label}(${e.weight})`),
+        });
     }
-  }
 
-  autoBtn.disabled = false;
-};
+    const totalWeight = mstEdges.reduce((sum, e) => sum + e.weight, 0);
+    stepsData.push({
+        description: `Complete! Total MST weight: ${totalWeight}`,
+        visited: visitedSet,
+        mstEdges: [...mstEdges],
+        currentEdge: null,
+        pq: [],
+        complete: true,
+    });
 
-// 🔹 Reset
-document.getElementById("reset").onclick = () => {
-  edges.forEach((e) => (e.state = "unused"));
-  primState = {};
-  kruskalState = {};
-  resetLog();
-  drawGraph();
-  document.getElementById("result").innerHTML = "";
-  log("🔄 Reset done.");
-};
+    return stepsData;
+}
 
-// Init
-generateGraph();
+// Generate steps for Kruskal's Algorithm
+function generateKruskalSteps() {
+    const stepsData = [];
+    const n = graph.nodes.length;
+    const parent = Array.from({ length: n }, (_, i) => i);
+    const rank = new Array(n).fill(0);
+    const mstEdges = [];
+
+    function find(x) {
+        if (parent[x] !== x) parent[x] = find(parent[x]);
+        return parent[x];
+    }
+
+    function union(x, y) {
+        const px = find(x);
+        const py = find(y);
+        if (px === py) return false;
+        if (rank[px] < rank[py]) {
+            parent[px] = py;
+        } else if (rank[px] > rank[py]) {
+            parent[py] = px;
+        } else {
+            parent[py] = px;
+            rank[px]++;
+        }
+        return true;
+    }
+
+    const sortedEdges = [...graph.edges].sort((a, b) => a.weight - b.weight);
+
+    stepsData.push({
+        description: "Start: Sort all edges by weight",
+        mstEdges: [],
+        currentEdge: null,
+        disjointSets: parent.map((p, i) => `{${graph.nodes[i].label}}`),
+        visited: [],
+    });
+
+    for (const edge of sortedEdges) {
+        const setFrom = find(edge.from);
+        const setTo = find(edge.to);
+
+        if (setFrom === setTo) {
+            stepsData.push({
+                description: `Skip edge ${graph.nodes[edge.from].label}-${graph.nodes[edge.to].label}: Creates cycle`,
+                mstEdges: [...mstEdges],
+                currentEdge: edge,
+                disjointSets: Array.from(new Set(parent.map(find))).map(root => {
+                    const members = parent.map((p, i) => find(i) === root ? graph.nodes[i].label : null).filter(Boolean);
+                    return `{${members.join(',')}}`;
+                }),
+                rejected: true,
+                visited: [],
+            });
+            continue;
+        }
+
+        union(edge.from, edge.to);
+        mstEdges.push(edge);
+
+        stepsData.push({
+            description: `Select edge ${graph.nodes[edge.from].label}-${graph.nodes[edge.to].label} (weight: ${edge.weight})`,
+            mstEdges: [...mstEdges],
+            currentEdge: edge,
+            disjointSets: Array.from(new Set(parent.map(find))).map(root => {
+                const members = parent.map((p, i) => find(i) === root ? graph.nodes[i].label : null).filter(Boolean);
+                return `{${members.join(',')}}`;
+            }),
+            visited: [],
+        });
+
+        if (mstEdges.length === n - 1) break;
+    }
+
+    const totalWeight = mstEdges.reduce((sum, e) => sum + e.weight, 0);
+    stepsData.push({
+        description: `Complete! Total MST weight: ${totalWeight}`,
+        mstEdges: [...mstEdges],
+        currentEdge: null,
+        disjointSets: [`{${graph.nodes.map(n => n.label).join(',')}}`],
+        complete: true,
+        visited: [],
+    });
+
+    return stepsData;
+}
+
+// Change algorithm (Prim's or Kruskal's)
+function changeAlgorithm(algo) {
+    if (isPlaying) togglePlay();
+    currentAlgorithm = algo;
+    
+    document.querySelectorAll('.btn-algo').forEach(btn => {
+        btn.classList.remove('active-prim', 'active-kruskal');
+    });
+    event.target.classList.add(algo === 'prim' ? 'active-prim' : 'active-kruskal');
+    
+    document.getElementById('algoTitle').textContent = algo === 'prim' ? "Prim's Algorithm" : "Kruskal's Algorithm";
+    document.getElementById('queueSection').style.display = algo === 'prim' ? 'block' : 'none';
+    document.getElementById('setsSection').style.display = algo === 'kruskal' ? 'block' : 'none';
+    document.getElementById('progressFill').className = `progress-fill ${algo}`;
+    
+    steps = algo === 'prim' ? generatePrimSteps() : generateKruskalSteps();
+    currentStep = 0;
+    render();
+}
+
+// Toggle play/pause
+function togglePlay() {
+    isPlaying = !isPlaying;
+    document.getElementById('playIcon').style.display = isPlaying ? 'none' : 'block';
+    document.getElementById('pauseIcon').style.display = isPlaying ? 'block' : 'none';
+    
+    if (isPlaying) {
+        playInterval = setInterval(() => {
+            if (currentStep < steps.length - 1) {
+                currentStep++;
+                render();
+            } else {
+                togglePlay();
+            }
+        }, speed);
+    } else {
+        clearInterval(playInterval);
+    }
+}
+
+// Reset to first step
+function reset() {
+    if (isPlaying) togglePlay();
+    currentStep = 0;
+    render();
+}
+
+// Go to next step
+function nextStep() {
+    if (currentStep < steps.length - 1) {
+        currentStep++;
+        render();
+    }
+}
+
+// Change animation speed
+function changeSpeed(value) {
+    speed = parseInt(value);
+    document.getElementById('speedLabel').textContent = ((2200 - speed) / 200) + 'x';
+    if (isPlaying) {
+        clearInterval(playInterval);
+        playInterval = setInterval(() => {
+            if (currentStep < steps.length - 1) {
+                currentStep++;
+                render();
+            } else {
+                togglePlay();
+            }
+        }, speed);
+    }
+}
+
+// Render current step
+function render() {
+    const step = steps[currentStep];
+    const canvas = document.getElementById('canvas');
+    
+    document.getElementById('stepInfo').textContent = `Step ${currentStep + 1} of ${steps.length}`;
+    document.getElementById('progressFill').style.width = `${((currentStep + 1) / steps.length) * 100}%`;
+    document.getElementById('nextBtn').disabled = currentStep >= steps.length - 1;
+    
+    const descBox = document.getElementById('stepDescription');
+    descBox.querySelector('p').textContent = step.description;
+    descBox.className = 'info-box';
+    if (step.complete) descBox.classList.add('complete');
+    if (step.rejected) descBox.classList.add('rejected');
+    
+    if (currentAlgorithm === 'prim' && step.pq) {
+        const queueList = document.getElementById('queueList');
+        queueList.innerHTML = step.pq.length > 0 
+            ? step.pq.map(e => `<div>${e}</div>`).join('')
+            : '<div class="empty">Empty</div>';
+    }
+    
+    if (currentAlgorithm === 'kruskal' && step.disjointSets) {
+        const setsList = document.getElementById('setsList');
+        setsList.innerHTML = step.disjointSets.map(s => `<div>${s}</div>`).join('');
+    }
+    
+    const edgesList = document.getElementById('edgesList');
+    if (step.mstEdges.length > 0) {
+        const totalWeight = step.mstEdges.reduce((sum, e) => sum + e.weight, 0);
+        edgesList.innerHTML = step.mstEdges.map(e => 
+            `<div>${graph.nodes[e.from].label} - ${graph.nodes[e.to].label} (${e.weight})</div>`
+        ).join('') + `<div class="total-weight">Total: ${totalWeight}</div>`;
+    } else {
+        edgesList.innerHTML = '<div class="empty">None yet</div>';
+    }
+    
+    canvas.innerHTML = '';
+    
+    graph.edges.forEach(edge => {
+        const from = graph.nodes[edge.from];
+        const to = graph.nodes[edge.to];
+        
+        const isInMST = step.mstEdges.some(
+            e => (e.from === edge.from && e.to === edge.to) || (e.from === edge.to && e.to === edge.from)
+        );
+        const isCurrent = step.currentEdge && 
+            ((step.currentEdge.from === edge.from && step.currentEdge.to === edge.to) ||
+             (step.currentEdge.from === edge.to && step.currentEdge.to === edge.from));
+        const isRejected = step.rejected && isCurrent;
+        
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.setAttribute('x1', from.x);
+        line.setAttribute('y1', from.y);
+        line.setAttribute('x2', to.x);
+        line.setAttribute('y2', to.y);
+        line.setAttribute('stroke', isRejected ? '#ef4444' : isInMST ? '#22c55e' : isCurrent ? '#fbbf24' : '#475569');
+        line.setAttribute('stroke-width', isInMST || isCurrent ? '4' : '2');
+        canvas.appendChild(line);
+        
+        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        text.setAttribute('x', (from.x + to.x) / 2);
+        text.setAttribute('y', (from.y + to.y) / 2 - 5);
+        text.setAttribute('fill', 'white');
+        text.setAttribute('font-size', '14');
+        text.setAttribute('font-weight', 'bold');
+        text.setAttribute('text-anchor', 'middle');
+        text.textContent = edge.weight;
+        canvas.appendChild(text);
+    });
+    
+    graph.nodes.forEach((node, i) => {
+        const isVisited = step.visited && step.visited.includes(i);
+        
+        const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        circle.setAttribute('cx', node.x);
+        circle.setAttribute('cy', node.y);
+        circle.setAttribute('r', '25');
+        circle.setAttribute('fill', isVisited ? (currentAlgorithm === 'prim' ? '#3b82f6' : '#a855f7') : '#1e293b');
+        circle.setAttribute('stroke', isVisited ? '#fff' : '#475569');
+        circle.setAttribute('stroke-width', '3');
+        canvas.appendChild(circle);
+        
+        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        text.setAttribute('x', node.x);
+        text.setAttribute('y', node.y + 6);
+        text.setAttribute('fill', 'white');
+        text.setAttribute('font-size', '18');
+        text.setAttribute('font-weight', 'bold');
+        text.setAttribute('text-anchor', 'middle');
+        text.textContent = node.label;
+        canvas.appendChild(text);
+    });
+}
+
+// Initialize on page load
+initializeGraph();
+steps = generatePrimSteps();
+render();
+
