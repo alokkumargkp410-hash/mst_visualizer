@@ -155,6 +155,16 @@ function generatePrimSteps() {
     while (pq.length > 0 && mstEdges.length < n - 1) {
         const edge = pq.shift();
         
+        // Show considering the edge first
+        stepsData.push({
+            description: `Considering edge ${graph.nodes[edge.from].label}-${graph.nodes[edge.to].label} (weight: ${edge.weight})`,
+            visited: [...visitedSet],
+            mstEdges: [...mstEdges],
+            currentEdge: edge,
+            pq: pq.map(e => `${graph.nodes[e.from].label}-${graph.nodes[e.to].label}(${e.weight})`),
+            considering: true,
+        });
+        
         if (visited[edge.to]) {
             stepsData.push({
                 description: `Skip edge ${graph.nodes[edge.from].label}-${graph.nodes[edge.to].label}: Creates cycle`,
@@ -250,6 +260,19 @@ function generateKruskalSteps() {
     });
 
     for (const edge of sortedEdges) {
+        // Show considering the edge first
+        stepsData.push({
+            description: `Considering edge ${graph.nodes[edge.from].label}-${graph.nodes[edge.to].label} (weight: ${edge.weight})`,
+            mstEdges: [...mstEdges],
+            currentEdge: edge,
+            disjointSets: Array.from(new Set(parent.map(find))).map(root => {
+                const members = parent.map((p, i) => find(i) === root ? graph.nodes[i].label : null).filter(Boolean);
+                return `{${members.join(',')}}`;
+            }),
+            considering: true,
+            visited: [],
+        });
+
         const setFrom = find(edge.from);
         const setTo = find(edge.to);
 
@@ -420,14 +443,26 @@ function render() {
             ((step.currentEdge.from === edge.from && step.currentEdge.to === edge.to) ||
              (step.currentEdge.from === edge.to && step.currentEdge.to === edge.from));
         const isRejected = step.rejected && isCurrent;
+        const isConsidering = step.considering && isCurrent;
         
         const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
         line.setAttribute('x1', from.x);
         line.setAttribute('y1', from.y);
         line.setAttribute('x2', to.x);
         line.setAttribute('y2', to.y);
-        line.setAttribute('stroke', isRejected ? '#ef4444' : isInMST ? '#22c55e' : isCurrent ? '#fbbf24' : '#475569');
-        line.setAttribute('stroke-width', isInMST || isCurrent ? '4' : '2');
+        
+        // Color logic: red for rejected, yellow for considering, green for MST, gray for unselected
+        let strokeColor = '#475569'; // default gray
+        if (isRejected) {
+            strokeColor = '#ef4444'; // red
+        } else if (isConsidering) {
+            strokeColor = '#fbbf24'; // yellow
+        } else if (isInMST) {
+            strokeColor = '#22c55e'; // green
+        }
+        
+        line.setAttribute('stroke', strokeColor);
+        line.setAttribute('stroke-width', (isInMST || isCurrent) ? '4' : '2');
         canvas.appendChild(line);
         
         const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
@@ -469,4 +504,3 @@ function render() {
 initializeGraph();
 steps = generatePrimSteps();
 render();
-
